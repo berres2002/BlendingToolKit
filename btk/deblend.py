@@ -440,7 +440,267 @@ class SepMultiBand(Deblender):
         catalog["dec"] = dec_coordinates
         return DeblendExample(self.max_n_sources, catalog)
 
+class DeepDisc(Deblender):
 
+    def __init__(self, max_n_sources: int, model_path: str):
+        super().__init__(max_n_sources)
+        self.model_path = model_path
+
+    def deblend(self, ii: int, blend_batch: BlendBatch) -> DeblendExample:
+        import os
+
+        from astropy.visualization import make_lupton_rgb
+        from PIL import Image, ImageEnhance
+
+        from detectron2.config import get_cfg
+        import deepdisc.astrodet.astrodet as toolkit
+        from deepdisc.astrodet import detectron as detectron_addons
+        from detectron2.config import LazyConfig
+
+        from deepdisc.data_format.file_io import DDLoader
+        from deepdisc.data_format.annotation_functions.annotate_decam import annotate_decam
+
+        # Setup cfg
+        # cfg = get_cfg()
+
+        # Load model
+        cfgfile = '../configs/solo/demo_r50_hsc.py' # determine later
+        cfg = LazyConfig.load(cfgfile)
+        cfg.OUTPUT_DIR = './'
+        cfg.train.init_checkpoint = os.path.join(cfg.OUTPUT_DIR, "model_temp.pth") # <- Path to model weights, change this to trained model weights
+
+        #change these to play with the detection sensitivity
+        #model.roi_heads.box_predictor.test_score_thresh = 0.3
+        #model.roi_heads.box_predictor.test_nms_thresh = 0.5
+
+        def read_image_hsc(self,ii,
+            normalize="lupton",
+            stretch=0.5,
+            Q=10,
+            m=0,
+            ceil_percentile=99.995,
+            dtype=np.uint8,
+            A=1e4,
+            do_norm=False,
+            ):
+            """
+            Read in a formatted HSC image
+
+            Parameters
+            ----------
+            filenames: list
+                The list of g,r,i band files
+            normalize: str
+                The key word for the normalization scheme
+            stretch, Q, m: float, int, float
+                Parameters for lupton normalization
+            ceil_percentile:
+                If do_norm is true, cuts data off at this percentile
+            dtype: numpy datatype
+                data type of the output array
+            A: float
+                scaling factor for zscoring
+            do_norm: boolean
+                For normalizing top fit dtype range
+
+            Returns
+            -------
+            Scaled image
+
+            """
+
+            def norm(z, r, g):
+                max_RGB = np.nanpercentile([z, r, g], ceil_percentile)
+                print(max_RGB)
+
+                max_z = np.nanpercentile([z], ceil_percentile)
+                max_r = np.nanpercentile([r], ceil_percentile)
+                max_g = np.nanpercentile([g], ceil_percentile)
+
+                # z = np.clip(z,None,max_RGB)
+                # r = np.clip(r,None,max_RGB)
+                # g = np.clip(g,None,max_RGB)
+
+                # avoid saturation
+                r = r / max_RGB
+                g = g / max_RGB
+                z = z / max_RGB
+                # r = r/max_r; g = g/max_g; z = z/max_z
+
+                # Rescale to 0-255 for dtype=np.uint8
+                max_dtype = np.iinfo(dtype).max
+                r = r * max_dtype
+                g = g * max_dtype
+                z = z * max_dtype
+
+                # 0-255 RGB image
+                image[:, :, 0] = z  # R
+                image[:, :, 1] = r  # G
+                image[:, :, 2] = g  # B
+
+                return image
+
+            # Read image
+
+            # need to figure out which indices are which bands
+            g = self.blend_batch.blend_images[ii][0]
+            r = self.blend_batch.blend_images[ii][1]
+            z = self.blend_batch.blend_images[ii][2]
+
+            # Contrast scaling / normalization
+            I = (z + r + g) / 3.0
+
+            length, width = g.shape
+            image = np.empty([length, width, 3], dtype=dtype)
+
+            # asinh(Q (I - minimum)/stretch)/Q
+
+            # Options for contrast scaling
+            if normalize.lower() == "lupton" or normalize.lower() == "luptonhc":
+                z = z * np.arcsinh(stretch * Q * (I - m)) / (Q * I)
+                r = r * np.arcsinh(stretch * Q * (I - m)) / (Q * I)
+                g = g * np.arcsinh(stretch * Q * (I - m)) / (Q * I)
+
+                # z = z*np.arcsinh(Q*(I - m)/stretch)/(Q)
+                # r = r*np.arcsinh(Q*(I - m)/stretch)/(Q)
+                # g = g*np.arcsinh(Q*(I - m)/stretch)/(Q)
+                image[:, :, 0] = z  # R
+                image[:, :, 1] = r  # G
+                image[:, :, 2] = g  # B
+                if do_norm:
+                    return norm(z, r, g)
+                else:
+                    return image
+
+            elif normalize.lower() == "astrolupton":
+                image = make_lupton_rgb(z, r, g, minimum=m, stretch=stretch, Q=Q)
+                return image
+
+            elif normalize.lower() == "zscore":
+                Imean = np.nanmean(I)
+                Isigma = np.nanstd(I)
+
+                z = A * (z - Imean - m) / Isigma
+                r = A * (r - Imean - m) / Isigma
+                g = A * (g - Imean - m) / Isigma
+
+                image[:, :, 0] = z  # R
+                image[:, :, 1] = r  # G
+                image[:, :, 2] = g  # B
+                if do_norm:
+                    return norm(z, r, g)
+                else:
+                    return image
+
+            elif normalize.lower() == "zscore_orig":
+                zsigma = np.nanstd(z)
+                rsigma = np.nanstd(r)
+                gsigma = np.nanstd(g)
+
+                z = A * (z - np.nanmean(z) - m) / zsigma
+                r = A * (r - np.nanmean(r) - m) / rsigma
+                g = A * (g - np.nanmean(g) - m) / gsigma
+
+                image[:, :, 0] = z  # R
+                image[:, :, 1] = r  # G
+                image[:, :, 2] = g  # B
+
+                return image
+
+            elif normalize.lower() == "sinh":
+                z = np.sinh((z - m))
+                r = np.sinh((r - m))
+                g = np.sinh((g - m))
+
+            # sqrt(Q (I - minimum)/stretch)/Q
+            elif normalize.lower() == "sqrt":
+                z = z * np.sqrt((I - m) * Q / stretch) / I / stretch
+                r = r * np.sqrt((I - m) * Q / stretch) / I / stretch
+                g = g * np.sqrt((I - m) * Q / stretch) / I / stretch
+                image[:, :, 0] = z  # R
+                image[:, :, 1] = r  # G
+                image[:, :, 2] = g  # B
+                if do_norm:
+                    return norm(z, r, g)
+                else:
+                    return image
+
+            elif normalize.lower() == "sqrt-old":
+                z = np.sqrt(z)
+                r = np.sqrt(r)
+                g = np.sqrt(g)
+                image[:, :, 0] = z  # R
+                image[:, :, 1] = r  # G
+                image[:, :, 2] = g  # B
+                if do_norm:
+                    return norm(z, r, g)
+                else:
+                    return image
+
+            elif normalize.lower() == "linear":
+                z = A * (z - m)
+                r = A * (r - m)
+                g = A * (g - m)
+                # z = (z - m)
+                # r = (r - m)
+                # g = (g - m)
+
+                image[:, :, 0] = z  # R
+                image[:, :, 1] = r  # G
+                image[:, :, 2] = g  # B
+                return image
+
+            elif normalize.lower() == "normlinear":
+                # image = np.empty([length, width, 3], dtype=dtype)
+
+                z = A * (z - m)
+                r = A * (r - m)
+                g = A * (g - m)
+                # z = (z - m)
+                # r = (r - m)
+                # g = (g - m)
+
+                # image[:,:,0] = z # R
+                # image[:,:,1] = r # G
+                # image[:,:,2] = g # B
+                # return image
+
+            elif normalize.lower() == "astroluptonhc":
+                image = make_lupton_rgb(z, r, g, minimum=m, stretch=stretch, Q=Q)
+                factor = 2  # gives original image
+                cenhancer = ImageEnhance.Contrast(Image.fromarray(image))
+                im_output = cenhancer.enhance(factor)
+                benhancer = ImageEnhance.Brightness(im_output)
+                image = benhancer.enhance(factor)
+                image = np.asarray(image)
+                return image
+
+            else:
+                print("Normalize keyword not recognized.")
+
+
+        # Load predictor function
+        predictor = toolkit.AstroPredictor(cfg) # Predictor class makes the predictions
+
+        # Load image
+        img =  read_image_hsc(ii)
+
+        # Make inference
+
+        output = predictor(img)
+
+        # Place in DeblendExample object
+
+        catalog = 'HSC' # change this later
+        segmentation = np.array(output["instances"].pred_masks)
+        # OR outputs.sem_seg, outputs.panoptic_seg
+        return DeblendExample(1,
+                    catalog,
+                    3,
+                    blend_batch.image_size,
+                    segmentation,
+                    None,
+                    None)
 class Scarlet(Deblender):
     """Implementation of the scarlet deblender."""
 
