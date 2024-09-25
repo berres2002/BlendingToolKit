@@ -442,9 +442,11 @@ class SepMultiBand(Deblender):
 
 class DeepDisc(Deblender):
 
-    def __init__(self, max_n_sources: int, model_path: str):
+    def __init__(self, max_n_sources: int, model_path: str, config_path: str):
         super().__init__(max_n_sources)
         self.model_path = model_path
+        # Add path to config file
+        self.config_path = config_path
 
     def deblend(self, ii: int, blend_batch: BlendBatch) -> DeblendExample:
         import os
@@ -464,10 +466,10 @@ class DeepDisc(Deblender):
         # cfg = get_cfg()
 
         # Load model
-        cfgfile = '../configs/solo/demo_r50_hsc.py' # determine later
+        cfgfile = self.config_path # determine later
         cfg = LazyConfig.load(cfgfile)
         cfg.OUTPUT_DIR = './'
-        cfg.train.init_checkpoint = os.path.join(cfg.OUTPUT_DIR, "model_temp.pth") # <- Path to model weights, change this to trained model weights
+        cfg.train.init_checkpoint = os.path.join(cfg.OUTPUT_DIR, self.model_path) # <- Path to model weights, change this to trained model weights
 
         #change these to play with the detection sensitivity
         #model.roi_heads.box_predictor.test_score_thresh = 0.3
@@ -689,18 +691,32 @@ class DeepDisc(Deblender):
 
         output = predictor(img)
 
+        # Get centers of Bounding Boxes 
+
+        centers = output['instances'].pred_boxes.get_centers().cpu().numpy()
+
+        wcs = blend_batch.wcs
+
+        ra_coordinates, dec_coordinates = wcs.pixel_to_world_values(centers[:,0], centers[:,1])
+        ra_coordinates *= 3600
+        dec_coordinates *= 3600
+
+        catalog = Table()
+        catalog["ra"] = ra_coordinates
+        catalog["dec"] = dec_coordinates
         # Place in DeblendExample object
 
-        catalog = 'HSC' # change this later
-        segmentation = np.array(output["instances"].pred_masks)
+        # catalog = 'HSC' # change this later
+        segmentation = output["instances"].pred_masks.cpu().numpy()
         # OR outputs.sem_seg, outputs.panoptic_seg
-        return DeblendExample(1,
+        return DeblendExample(len(output["instances"]),
                     catalog,
                     3,
                     blend_batch.image_size,
                     segmentation,
                     None,
                     None)
+    
 class Scarlet(Deblender):
     """Implementation of the scarlet deblender."""
 
