@@ -475,7 +475,7 @@ class DeepDisc(Deblender):
         #model.roi_heads.box_predictor.test_score_thresh = 0.3
         #model.roi_heads.box_predictor.test_nms_thresh = 0.5
 
-        def read_image_hsc(self,ii,
+        def read_image_hsc(ii,
             normalize="lupton",
             stretch=0.5,
             Q=10,
@@ -545,9 +545,9 @@ class DeepDisc(Deblender):
             # Read image
 
             # need to figure out which indices are which bands
-            g = self.blend_batch.blend_images[ii][0]
-            r = self.blend_batch.blend_images[ii][1]
-            z = self.blend_batch.blend_images[ii][2]
+            g = blend_batch.blend_images[ii][0]
+            r = blend_batch.blend_images[ii][1]
+            z = blend_batch.blend_images[ii][3]
 
             # Contrast scaling / normalization
             I = (z + r + g) / 3.0
