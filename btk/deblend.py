@@ -693,7 +693,7 @@ class DeepDisc(Deblender):
             td = tempfile.TemporaryDirectory()
             tmpdirname = td.name
             tp = os.path.join(tmpdirname,f'temp_{ii}.npy')
-            np.save(tp,bb[ii])
+            np.save(tp,bb)
             img = cfg.dataloader.imagereader(tp)
             td.cleanup()
             return img
