@@ -474,7 +474,7 @@ class DeepDisc(Deblender):
         #change these to play with the detection sensitivity
         #model.roi_heads.box_predictor.test_score_thresh = 0.3
         #model.roi_heads.box_predictor.test_nms_thresh = 0.5
-
+        reader_scaling = cfg.dataloader.imagereader.scaling
         def read_image_hsc(ii,
             normalize="lupton",
             stretch=0.5,
@@ -685,8 +685,8 @@ class DeepDisc(Deblender):
         predictor = toolkit.AstroPredictor(cfg) # Predictor class makes the predictions
 
         # Load image
-        img =  read_image_hsc(ii)
-
+        # img =  read_image_hsc(ii)
+        img = reader_scaling(blend_batch.blend_images[ii])
         # Make inference
 
         output = predictor(img)
