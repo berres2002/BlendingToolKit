@@ -690,10 +690,12 @@ class DeepDisc(Deblender):
             import tempfile
             import os
 
-            with tempfile.TemporaryDirectory() as tmpdirname:
-                tp = os.path.join(tmpdirname,f'temp_{ii}')
-                np.save(tp,bb[ii])
-                img = cfg.dataloader.imagereader(tp)
+            td = tempfile.TemporaryDirectory()
+            tmpdirname = td.name
+            tp = os.path.join(tmpdirname,f'temp_{ii}.npy')
+            np.save(tp,bb[ii])
+            img = cfg.dataloader.imagereader(tp)
+            td.cleanup()
             return img
         img = reader_save(blend_batch.blend_images[ii],ii)
         # Make inference
