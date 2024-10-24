@@ -686,7 +686,15 @@ class DeepDisc(Deblender):
 
         # Load image
         # img =  read_image_hsc(ii)
+        def reader_find():
+            try:
+                reader = cfg.dataloader.imagereader
+            except:
+                from deepdisc.data_format.image_readers import RomanImageReader
+                reader = RomanImageReader()
+            return reader
         def reader_save(bb, ii):
+            reader = reader_find()
             import tempfile
             import os
 
@@ -694,7 +702,7 @@ class DeepDisc(Deblender):
             tmpdirname = td.name
             tp = os.path.join(tmpdirname,f'temp_{ii}.npy')
             np.save(tp,bb)
-            img = cfg.dataloader.imagereader(tp)
+            img = reader(tp)
             td.cleanup()
             return img
         img = reader_save(blend_batch.blend_images[ii],ii)
