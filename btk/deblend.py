@@ -474,7 +474,7 @@ class DeepDisc(Deblender):
         #change these to play with the detection sensitivity
         #model.roi_heads.box_predictor.test_score_thresh = 0.3
         #model.roi_heads.box_predictor.test_nms_thresh = 0.5
-        reader_scaling = cfg.dataloader.imagereader.scaling
+        # reader_scaling = cfg.dataloader.imagereader.scaling
         def read_image_hsc(ii,
             normalize="lupton",
             stretch=0.5,
@@ -686,7 +686,16 @@ class DeepDisc(Deblender):
 
         # Load image
         # img =  read_image_hsc(ii)
-        img = reader_scaling(blend_batch.blend_images[ii])
+        def reader_save(bb, ii):
+            import tempfile
+            import os
+
+            with tempfile.TemporaryDirectory() as tmpdirname:
+                tp = os.path.join(tmpdirname,f'temp_{ii}')
+                np.save(tp,bb[ii])
+                img = cfg.dataloader.imagereader(tp)
+            return img
+        img = reader_save(blend_batch.blend_images[ii],ii)
         # Make inference
 
         output = predictor(img)
