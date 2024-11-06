@@ -693,19 +693,11 @@ class DeepDisc(Deblender):
                 from deepdisc.data_format.image_readers import RomanImageReader
                 reader = RomanImageReader()
             return reader
-        def reader_save(bb, ii):
+        def reader_save(bb):
             reader = reader_find()
-            import tempfile
-            import os
-
-            td = tempfile.TemporaryDirectory()
-            tmpdirname = td.name
-            tp = os.path.join(tmpdirname,f'temp_{ii}.npy')
-            np.save(tp,bb)
-            img = reader(tp)
-            td.cleanup()
+            img = reader(bb)
             return img
-        img = reader_save(blend_batch.blend_images[ii],ii)
+        img = reader_save(blend_batch.blend_images[ii])
         # Make inference
 
         output = predictor(img)
