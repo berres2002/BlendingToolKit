@@ -723,6 +723,8 @@ class DeepDisc(Deblender):
         catalog = Table()
         catalog["ra"] = ra_coordinates
         catalog["dec"] = dec_coordinates
+        catalog['x_peak'] = centers[:,0]
+        catalog['y_peak'] = centers[:,1]
         # Place in DeblendExample object
 
         # catalog = 'HSC' # change this later
