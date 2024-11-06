@@ -732,7 +732,7 @@ class DeepDisc(Deblender):
         # OR outputs.sem_seg, outputs.panoptic_seg
         return DeblendExample(len(output["instances"]),
                     catalog,
-                    3,
+                    img.shape[2],
                     blend_batch.image_size,
                     segmentation,
                     None,
