@@ -720,14 +720,19 @@ class DeepDisc(Deblender):
         # Place in DeblendExample object
 
         # catalog = 'HSC' # change this later
+
+        # add segmentation and deblended images
         segmentation = output["instances"].pred_masks.cpu().numpy()
+        deblended_images = np.zeros((segmentation.shape[0],img.shape[0],img.shape[1]))
+        for i in range(segmentation.shape[0]):
+            deblended_images[i] = img * segmentation[i].astype(img.dtype) # cuts out source from image using segmentation mask
         # OR outputs.sem_seg, outputs.panoptic_seg
         return DeblendExample(len(output["instances"]),
                     catalog,
                     img.shape[2],
                     blend_batch.image_size,
                     segmentation,
-                    None,
+                    deblended_images,
                     None)
     
 class Scarlet(Deblender):
