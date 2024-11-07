@@ -727,7 +727,7 @@ class DeepDisc(Deblender):
         for i in range(segmentation.shape[0]):
             deblended_images[i] = img * segmentation[i].astype(img.dtype) # cuts out source from image using segmentation mask
         # OR outputs.sem_seg, outputs.panoptic_seg
-        return DeblendExample(len(output["instances"]),
+        return DeblendExample(self.max_n_sources,
                     catalog,
                     img.shape[2],
                     blend_batch.image_size,
