@@ -723,6 +723,7 @@ class DeepDisc(Deblender):
 
         # add segmentation and deblended images
         segmentation = output["instances"].pred_masks.cpu().numpy()
+        print(segmentation.shape,self.max_n_sources)
         deblended_images = np.zeros((segmentation.shape[0],img.shape[0],img.shape[1]))
         for i in range(segmentation.shape[0]):
             deblended_images[i] = img * segmentation[i].astype(img.dtype) # cuts out source from image using segmentation mask
