@@ -442,11 +442,16 @@ class SepMultiBand(Deblender):
 
 class DeepDisc(Deblender):
 
-    def __init__(self, max_n_sources: int, model_path: str, config_path: str):
+    def __init__(self, max_n_sources: int, model_path: str, config_path: str, score_thresh: float = 0.3, nms_thresh: float = 0.5):
         super().__init__(max_n_sources)
         self.model_path = model_path
         # Add path to config file
         self.config_path = config_path
+
+        # Add threshold for detection
+        # self.topk_per_image = 3000
+        self.score_thresh = score_thresh
+        self.nms_thresh = nms_thresh
 
     def deblend(self, ii: int, blend_batch: BlendBatch) -> DeblendExample:
         import os
@@ -472,8 +477,10 @@ class DeepDisc(Deblender):
         cfg.train.init_checkpoint = os.path.join(cfg.OUTPUT_DIR, self.model_path) # <- Path to model weights, change this to trained model weights
 
         #change these to play with the detection sensitivity
-        #model.roi_heads.box_predictor.test_score_thresh = 0.3
-        #model.roi_heads.box_predictor.test_nms_thresh = 0.5
+        for box_predictor in cfg.model.roi_heads.box_predictors:
+            # box_predictor.test_topk_per_image = 3000
+            box_predictor.test_score_thresh = self.score_thresh
+            box_predictor.test_nms_thresh = self.nms_thresh
         # reader_scaling = cfg.dataloader.imagereader.scaling
         def read_image_hsc(ii,
             normalize="lupton",
@@ -724,6 +731,12 @@ class DeepDisc(Deblender):
         # add segmentation and deblended images
         segmentation = output["instances"].pred_masks.cpu().numpy()
         print(segmentation.shape,self.max_n_sources)
+        if segmentation.shape[0] > self.max_n_sources:
+            raise ValueError(
+                "DeepDISC predicted more sources than `max_n_sources`. Consider decreasing `score_thresh`"
+                " or `max_n_sources`."
+                f"Detections {segmentation.shape[0]} > {self.max_n_sources}"
+            )
         deblended_images = np.zeros((segmentation.shape[0], img.shape[2],img.shape[0],img.shape[1]))
         rimg = np.transpose(img,(2,0,1))
         for i in range(segmentation.shape[0]):
