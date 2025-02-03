@@ -730,13 +730,15 @@ class DeepDisc(Deblender):
 
         # add segmentation and deblended images
         segmentation = output["instances"].pred_masks.cpu().numpy()
-        print(segmentation.shape,self.max_n_sources)
+        segs = np.zeros((self.max_n_sources, img.shape[0], img.shape[1]),dtype=segmentation.dtype)
+        # print(segmentation.shape,self.max_n_sources)
         if segmentation.shape[0] > self.max_n_sources:
             raise ValueError(
                 "DeepDISC predicted more sources than `max_n_sources`. Consider decreasing `score_thresh`"
                 " or `max_n_sources`."
                 f"Detections {segmentation.shape[0]} > {self.max_n_sources}"
             )
+        segs[:segmentation.shape[0]] = segmentation
         deblended_images = np.zeros((self.max_n_sources, img.shape[2],img.shape[0],img.shape[1]))
         rimg = np.transpose(img,(2,0,1))
         for i in range(segmentation.shape[0]):
@@ -746,7 +748,7 @@ class DeepDisc(Deblender):
                     catalog,
                     img.shape[2],
                     blend_batch.image_size,
-                    segmentation,
+                    segs,
                     deblended_images,
                     None)
     
