@@ -895,6 +895,59 @@ class Scarlet(Deblender):
             deblended_images = np.zeros((self.max_n_sources, n_bands, img_size, img_size))
             return DeblendExample(self.max_n_sources, t, n_bands, img_size, None, deblended_images)
 
+class ScarDet(Deblender):
+    """
+    This class combines PeakLocalMax and Scarlet deblenders to detect and then deblend the sources. This is to simulate the LSST detection and deblending pipeline.
+    """
+    def __init__(
+        self,
+        # PeakLocalMax parameters
+        max_n_sources: int,
+        sky_level: float,
+        threshold_scale: int = 5,
+        min_distance: int = 2,
+        use_mean: bool = False,
+        use_band: Optional[int] = None,
+        # Scarlet parameters
+        thresh: float = 1.0,
+        e_rel: float = 1e-5,
+        max_iter: int = 200,
+        max_components: int = 2,
+        min_snr: float = 50,
+    ) -> None:
+        '''
+        Initialize the ScarDet deblender class.
+        '''
+        
+        super().__init__(max_n_sources)
+        # self.max_n_sources = max_n_sources
+        # self.sky_level = sky_level
+        # self.threshold_scale = threshold_scale
+        # self.min_distance = min_distance
+        # self.use_mean = use_mean
+        # self.use_band = use_band
+        # self.thresh = thresh
+        # self.e_rel = e_rel
+        # self.max_iter = max_iter
+        # self.max_components = max_components
+        # self.min_snr = min_snr
+
+        # initialize PeakLocalMax
+        self.peak_local_max = PeakLocalMax(
+            max_n_sources, sky_level, threshold_scale, min_distance, use_mean, use_band
+        )
+
+        # initialize Scarlet
+        self.scarlet = Scarlet(max_n_sources, thresh, e_rel, max_iter, max_components, min_snr)
+
+    def _find_peaks(self, ii: int,blend_batch: np.ndarray) -> Table:
+        """Find peaks in the blend image using PeakLocalMax."""
+        return self.peak_local_max.deblend(ii,blend_batch).catalog
+    
+    def deblend(self, ii: int, blend_batch: BlendBatch) -> DeblendExample:
+        peaks = self._find_peaks(ii,blend_batch)
+        return self.scarlet.deblend(ii, blend_batch, reference_catalogs=peaks)
+
 
 class DeblendGenerator:
     """Run one or more deblenders on the batches from the given draw_blend_generator."""
