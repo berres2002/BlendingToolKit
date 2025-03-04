@@ -946,7 +946,9 @@ class ScarDet(Deblender):
     
     def deblend(self, ii: int, blend_batch: BlendBatch) -> DeblendExample:
         peaks = self._find_peaks(ii,blend_batch)
-        return self.scarlet.deblend(ii, blend_batch, reference_catalogs=peaks)
+        fake_list = [None]*blend_batch.batch_size
+        fake_list[ii] = peaks
+        return self.scarlet.deblend(ii, blend_batch, reference_catalogs=fake_list)
 
 
 class DeblendGenerator:
