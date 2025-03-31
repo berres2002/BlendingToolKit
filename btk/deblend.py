@@ -442,7 +442,7 @@ class SepMultiBand(Deblender):
 
 class DeepDisc(Deblender):
 
-    def __init__(self, max_n_sources: int, model_path: str, config_path: str, score_thresh: float = 0.3, nms_thresh: float = 0.5):
+    def __init__(self, max_n_sources: int, model_path: str, config_path: str, score_thresh: float = 0.3, nms_thresh: float = 0.5, allow_over_n_sources: bool = False):
         super().__init__(max_n_sources)
         self.model_path = model_path
         # Add path to config file
@@ -452,6 +452,7 @@ class DeepDisc(Deblender):
         # self.topk_per_image = 3000
         self.score_thresh = score_thresh
         self.nms_thresh = nms_thresh
+        self.allow_over_n_sources = allow_over_n_sources
 
     def deblend(self, ii: int, blend_batch: BlendBatch) -> DeblendExample:
         import os
@@ -732,12 +733,17 @@ class DeepDisc(Deblender):
         segmentation = output["instances"].pred_masks.cpu().numpy()
         segs = np.zeros((self.max_n_sources, img.shape[0], img.shape[1]),dtype=segmentation.dtype)
         # print(segmentation.shape,self.max_n_sources)
-        if segmentation.shape[0] > self.max_n_sources:
+        if segmentation.shape[0] > self.max_n_sources and self.allow_over_n_sources == False:
             raise ValueError(
                 "DeepDISC predicted more sources than `max_n_sources`. Consider decreasing `score_thresh`"
                 " or `max_n_sources`."
                 f"Detections {segmentation.shape[0]} > {self.max_n_sources}"
             )
+        else:
+            print("DeepDISC predicted more sources than `max_n_sources`. Allowing the output of more sources "
+            "than `max_n_sources` as"
+            " `allow_over_n_sources` was set to `True`.")
+            self.max_n_sources = segmentation.shape[0]
         segs[:segmentation.shape[0]] = segmentation
         deblended_images = np.zeros((self.max_n_sources, img.shape[2],img.shape[0],img.shape[1]))
         rimg = np.transpose(img,(2,0,1))
