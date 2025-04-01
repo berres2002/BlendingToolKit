@@ -739,7 +739,7 @@ class DeepDisc(Deblender):
                 " or `max_n_sources`."
                 f"Detections {segmentation.shape[0]} > {self.max_n_sources}"
             )
-        else:
+        elif segmentation.shape[0] > self.max_n_sources and self.allow_over_n_sources == True:
             print("DeepDISC predicted more sources than `max_n_sources`. Allowing the output of more sources "
             "than `max_n_sources` as"
             " `allow_over_n_sources` was set to `True`.")
