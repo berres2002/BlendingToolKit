@@ -731,7 +731,7 @@ class DeepDisc(Deblender):
 
         # add segmentation and deblended images
         segmentation = output["instances"].pred_masks.cpu().numpy()
-        segs = np.zeros((self.max_n_sources, img.shape[0], img.shape[1]),dtype=segmentation.dtype)
+        
         # print(segmentation.shape,self.max_n_sources)
         if segmentation.shape[0] > self.max_n_sources and self.allow_over_n_sources == False:
             raise ValueError(
@@ -744,6 +744,7 @@ class DeepDisc(Deblender):
             "than `max_n_sources` as"
             " `allow_over_n_sources` was set to `True`.")
             self.max_n_sources = segmentation.shape[0]
+        segs = np.zeros((self.max_n_sources, img.shape[0], img.shape[1]),dtype=segmentation.dtype)
         segs[:segmentation.shape[0]] = segmentation
         deblended_images = np.zeros((self.max_n_sources, img.shape[2],img.shape[0],img.shape[1]))
         rimg = np.transpose(img,(2,0,1))
