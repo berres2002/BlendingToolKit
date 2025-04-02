@@ -735,8 +735,8 @@ class DeepDisc(Deblender):
         # print(segmentation.shape,self.max_n_sources)
         if segmentation.shape[0] > self.max_n_sources and self.allow_over_n_sources == False:
             raise ValueError(
-                "DeepDISC predicted more sources than `max_n_sources`. Consider decreasing `score_thresh`"
-                " or `max_n_sources`."
+                "DeepDISC predicted more sources than `max_n_sources`. Consider increasing `score_thresh`"
+                " or decreasing `max_n_sources`."
                 f"Detections {segmentation.shape[0]} > {self.max_n_sources}"
             )
         elif segmentation.shape[0] > self.max_n_sources and self.allow_over_n_sources == True:
