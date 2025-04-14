@@ -443,6 +443,11 @@ class SepMultiBand(Deblender):
 class DeepDisc(Deblender):
 
     def __init__(self, max_n_sources: int, model_path: str, config_path: str, score_thresh: float = 0.3, nms_thresh: float = 0.5, allow_over_n_sources: bool = False):
+        from detectron2.config import get_cfg
+        import deepdisc.astrodet.astrodet as toolkit
+        # from deepdisc.astrodet import detectron as detectron_addons
+        from detectron2.config import LazyConfig
+        import os
         super().__init__(max_n_sources)
         self.model_path = model_path
         # Add path to config file
@@ -453,32 +458,37 @@ class DeepDisc(Deblender):
         self.score_thresh = score_thresh
         self.nms_thresh = nms_thresh
         self.allow_over_n_sources = allow_over_n_sources
+        #load cfg
+        cfgfile = self.config_path # determine later
+        self.cfg = LazyConfig.load(cfgfile)
+        self.cfg.OUTPUT_DIR = './'
+        self.cfg.train.init_checkpoint = os.path.join(self.cfg.OUTPUT_DIR, self.model_path) # <- Path to model weights, change this to trained model weights
+
+        # Load predictor function
+        self.predictor = toolkit.AstroPredictor(self.cfg) # Predictor class makes the predictions
 
     def deblend(self, ii: int, blend_batch: BlendBatch) -> DeblendExample:
-        import os
+        # import os
 
         from astropy.visualization import make_lupton_rgb
         from PIL import Image, ImageEnhance
 
-        from detectron2.config import get_cfg
-        import deepdisc.astrodet.astrodet as toolkit
-        from deepdisc.astrodet import detectron as detectron_addons
-        from detectron2.config import LazyConfig
+        
 
-        from deepdisc.data_format.file_io import DDLoader
-        from deepdisc.data_format.annotation_functions.annotate_decam import annotate_decam
+        # from deepdisc.data_format.file_io import DDLoader
+        # from deepdisc.data_format.annotation_functions.annotate_decam import annotate_decam
 
         # Setup cfg
         # cfg = get_cfg()
 
         # Load model
-        cfgfile = self.config_path # determine later
-        cfg = LazyConfig.load(cfgfile)
-        cfg.OUTPUT_DIR = './'
-        cfg.train.init_checkpoint = os.path.join(cfg.OUTPUT_DIR, self.model_path) # <- Path to model weights, change this to trained model weights
+        # cfgfile = self.config_path # determine later
+        # cfg = LazyConfig.load(cfgfile)
+        # cfg.OUTPUT_DIR = './'
+        # cfg.train.init_checkpoint = os.path.join(cfg.OUTPUT_DIR, self.model_path) # <- Path to model weights, change this to trained model weights
 
         #change these to play with the detection sensitivity
-        for box_predictor in cfg.model.roi_heads.box_predictors:
+        for box_predictor in self.cfg.model.roi_heads.box_predictors:
             # box_predictor.test_topk_per_image = 3000
             box_predictor.test_score_thresh = self.score_thresh
             box_predictor.test_nms_thresh = self.nms_thresh
@@ -689,14 +699,13 @@ class DeepDisc(Deblender):
                 print("Normalize keyword not recognized.")
 
 
-        # Load predictor function
-        predictor = toolkit.AstroPredictor(cfg) # Predictor class makes the predictions
+
 
         # Load image
         # img =  read_image_hsc(ii)
         def reader_find():
             try:
-                reader = cfg.dataloader.imagereader
+                reader = self.cfg.dataloader.imagereader
             except:
                 from deepdisc.data_format.image_readers import RomanImageReader
                 reader = RomanImageReader()
@@ -708,9 +717,12 @@ class DeepDisc(Deblender):
         img = reader_save(blend_batch.blend_images[ii])
         # Make inference
 
-        output = predictor(img)
+        output = self.predictor(img)
 
         # Get centers of Bounding Boxes 
+
+        # Create dict for extra data, has to be None if not populated
+        extra_dict = None
 
         centers = output['instances'].pred_boxes.get_centers().cpu().numpy()
 
@@ -743,21 +755,35 @@ class DeepDisc(Deblender):
             print("DeepDISC predicted more sources than `max_n_sources`. Allowing the output of more sources "
             "than `max_n_sources` as"
             " `allow_over_n_sources` was set to `True`.")
-            self.max_n_sources = segmentation.shape[0]
-        segs = np.zeros((self.max_n_sources, img.shape[0], img.shape[1]),dtype=segmentation.dtype)
-        segs[:segmentation.shape[0]] = segmentation
-        deblended_images = np.zeros((self.max_n_sources, img.shape[2],img.shape[0],img.shape[1]))
-        rimg = np.transpose(img,(2,0,1))
-        for i in range(segmentation.shape[0]):
-            deblended_images[i] = rimg * segmentation[i].astype(img.dtype) # cuts out source from image using segmentation mask
+            # self.max_n_sources = segmentation.shape[0]
+            segs = np.zeros((self.max_n_sources, img.shape[0], img.shape[1]),dtype=segmentation.dtype) #create empty array
+            segs[:self.max_n_sources] = segmentation[:self.max_n_sources] # fill segs array UP to max_n_sources
+            extra_segs = segmentation[(self.max_n_sources-segmentation.shape[0]):] # get the rest of the segmentation maps
+            extra_dict = {'segs': extra_segs} # add to extra_dict
+
+            deblended_images = np.zeros((self.max_n_sources, img.shape[2],img.shape[0],img.shape[1]))
+            rimg = np.transpose(img,(2,0,1))
+            for i in range(segmentation.shape[0]):
+                deblended_images[i] = rimg * segmentation[i].astype(img.dtype) # cuts out source from image using segmentation mask
+            deblended_ims = deblended_images[:self.max_n_sources] # only keep the first max_n_sources
+            extra_deblend = deblended_images[(self.max_n_sources-segmentation.shape[0]):] # get the rest of the deblended images
+            extra_dict['deblended_images'] = extra_deblend # add to extra_dict
+        else:
+            segs = np.zeros((self.max_n_sources, img.shape[0], img.shape[1]),dtype=segmentation.dtype)
+            segs[:segmentation.shape[0]] = segmentation
+            deblended_images = np.zeros((self.max_n_sources, img.shape[2],img.shape[0],img.shape[1]))
+            rimg = np.transpose(img,(2,0,1))
+            for i in range(segmentation.shape[0]):
+                deblended_images[i] = rimg * segmentation[i].astype(img.dtype) # cuts out source from image using segmentation mask
+            deblended_ims = deblended_images
         # OR outputs.sem_seg, outputs.panoptic_seg
         return DeblendExample(self.max_n_sources,
                     catalog,
                     img.shape[2],
                     blend_batch.image_size,
                     segs,
-                    deblended_images,
-                    None)
+                    deblended_ims,
+                    extra_dict)
     
 class Scarlet(Deblender):
     """Implementation of the scarlet deblender."""
