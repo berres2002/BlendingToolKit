@@ -463,7 +463,10 @@ class DeepDisc(Deblender):
         self.cfg = LazyConfig.load(cfgfile)
         self.cfg.OUTPUT_DIR = './'
         self.cfg.train.init_checkpoint = os.path.join(self.cfg.OUTPUT_DIR, self.model_path) # <- Path to model weights, change this to trained model weights
-
+        for box_predictor in self.cfg.model.roi_heads.box_predictors:
+            # box_predictor.test_topk_per_image = 3000
+            box_predictor.test_score_thresh = self.score_thresh
+            box_predictor.test_nms_thresh = self.nms_thresh
         # Load predictor function
         self.predictor = toolkit.AstroPredictor(self.cfg) # Predictor class makes the predictions
 
@@ -488,10 +491,10 @@ class DeepDisc(Deblender):
         # cfg.train.init_checkpoint = os.path.join(cfg.OUTPUT_DIR, self.model_path) # <- Path to model weights, change this to trained model weights
 
         #change these to play with the detection sensitivity
-        for box_predictor in self.cfg.model.roi_heads.box_predictors:
-            # box_predictor.test_topk_per_image = 3000
-            box_predictor.test_score_thresh = self.score_thresh
-            box_predictor.test_nms_thresh = self.nms_thresh
+        # for box_predictor in self.cfg.model.roi_heads.box_predictors:
+        #     # box_predictor.test_topk_per_image = 3000
+        #     box_predictor.test_score_thresh = self.score_thresh
+        #     box_predictor.test_nms_thresh = self.nms_thresh
         # reader_scaling = cfg.dataloader.imagereader.scaling
         def read_image_hsc(ii,
             normalize="lupton",
