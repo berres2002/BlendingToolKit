@@ -764,7 +764,7 @@ class DeepDisc(Deblender):
             extra_segs = segmentation[(self.max_n_sources-segmentation.shape[0]):] # get the rest of the segmentation maps
             extra_dict = {'segs': extra_segs} # add to extra_dict
 
-            deblended_images = np.zeros((self.max_n_sources, img.shape[2],img.shape[0],img.shape[1]))
+            deblended_images = np.zeros((segmentation.shape[0], img.shape[2],img.shape[0],img.shape[1]))
             rimg = np.transpose(img,(2,0,1))
             for i in range(segmentation.shape[0]):
                 deblended_images[i] = rimg * segmentation[i].astype(img.dtype) # cuts out source from image using segmentation mask
