@@ -217,11 +217,11 @@ class DeblendExample:
                 "The output catalog of at least one of your deblenders does"
                 "not contain the mandatory 'ra' and 'dec' columns"
             )
-        if not len(catalog) <= self.max_n_sources:
-            raise ValueError(
-                "The detection catalog of at least one of your deblended images "
-                "contains more sources than the maximum number of sources specified."
-            )
+        # if not len(catalog) <= self.max_n_sources:
+        #     raise ValueError(
+        #         "The detection catalog of at least one of your deblended images "
+        #         "contains more sources than the maximum number of sources specified."
+        #     )
         return catalog
 
     def _validate_segmentation(self, segmentation: Optional[np.ndarray]):
