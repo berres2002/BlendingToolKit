@@ -725,7 +725,7 @@ class DeepDisc(Deblender):
         # Get centers of Bounding Boxes 
 
         # Create dict for extra data, has to be None if not populated
-        extra_dict = None
+        extra_dict = {}
 
         centers = output['instances'].pred_boxes.get_centers().cpu().numpy()
 
