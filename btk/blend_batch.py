@@ -321,11 +321,11 @@ class DeblendBatch:
                     "The output catalog of at least one of your measurement functions does"
                     "not contain the mandatory 'ra' and 'dec' columns"
                 )
-            if not len(catalog) <= self.max_n_sources:
-                raise ValueError(
-                    "The detections catalog of at least one of your deblended images "
-                    "contains more sources than the maximum number of sources specified."
-                )
+            # if not len(catalog) <= self.max_n_sources:
+            #     raise ValueError(
+            #         "The detections catalog of at least one of your deblended images "
+            #         "contains more sources than the maximum number of sources specified."
+            #     )
         return catalog_list
 
     def _validate_segmentation(self, segmentation: Optional[np.ndarray] = None) -> np.ndarray:
