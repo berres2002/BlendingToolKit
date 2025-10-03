@@ -562,7 +562,7 @@ class CosmoDC2Generator(DrawBlendsGenerator):
             sampling_function,
             surveys,
             batch_size,
-            stamp_size,
+            #stamp_size,
             njobs,
             verbose,
             use_bar,
