@@ -799,6 +799,7 @@ class Scarlet(Deblender):
         max_iter: int = 200,
         max_components: int = 2,
         min_snr: float = 50,
+        bkg: np.ndarray = None,
     ):
         """Initialize the Scarlet deblender class.
 
@@ -831,6 +832,7 @@ class Scarlet(Deblender):
         self.max_iter = max_iter
         self.max_components = max_components
         self.min_snr = min_snr
+        self.bkg = bkg
 
     def deblend(
         self, ii: int, blend_batch: BlendBatch, reference_catalogs: Table = None
@@ -873,8 +875,11 @@ class Scarlet(Deblender):
             return DeblendExample(self.max_n_sources, t, n_bands, img_size, None, deblended_images)
 
         # get background
-        filters = [survey.get_filter(band) for band in bands]
-        bkg = np.array([mean_sky_level(survey, f).to_value("electron") for f in filters])
+        if self.bkg is not None:
+            bkg = self.bkg
+        else:
+            filters = [survey.get_filter(band) for band in bands]
+            bkg = np.array([mean_sky_level(survey, f).to_value("electron") for f in filters])
 
         # initialize scarlet
         model_psf = scarlet.GaussianPSF(sigma=(0.6,) * n_bands)
