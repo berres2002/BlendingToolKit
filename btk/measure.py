@@ -1,6 +1,6 @@
 """Module for measuring galaxy properties from images."""
 
-from typing import Tuple
+from typing import Dict, Tuple
 
 import galsim
 import numpy as np
@@ -80,6 +80,96 @@ def get_ksb_ellipticity(
             else:
                 ellipticities[ii, jj] = (np.nan, np.nan)
     return ellipticities
+
+
+def get_hsm_shapes(images: np.ndarray,centroids: np.ndarray,psf: GSObject,pixel_scale: float,
+method: str = "REGAUSS",) -> Dict[str, np.ndarray]:
+    """Measure galaxy shapes using GalSim's HSM code (REGAUSS by default).
+
+    REGAUSS is the shape method the Rubin pipeline uses so I chose that one. This function returns
+    shear (g1, g2) where g = (a-b) / (a+b). g1 is sideways stretch, g2 is diagonal stretch. 
+    This is even for methods that measure distortion (e1, e2), so that the
+    results from different methods can be compared.
+
+    Note: If a galaxy image is empty or the measurement fails, that galaxy gets np.nan so we can skip it.
+
+    Args:
+        images: Galaxy images in a single band, shape (batch_size, max_n_sources, h, w).
+        centroids: Galaxy centers (x, y), shape (batch_size, max_n_sources, 2). Uses the
+            GalSim convention where the center of the lower-left pixel is (1, 1).
+        psf: GalSim PSF object, assumed to be the same for all galaxies.
+        pixel_scale: Pixel scale of the images in arcsec/pixel.
+        method: HSM method to use: "REGAUSS", "KSB", "LINEAR", or "BJ".
+
+    Returns:
+        Dictionary with keys "g1", "g2", "resolution", "sigma". Each value is an array of
+        shape (batch_size, max_n_sources).
+            g1, g2: PSF-corrected shear of each galaxy.
+            resolution: how resolved the galaxy is compared to the PSF (0 to 1).
+            sigma: size of the galaxy in pixels.
+            
+    """
+    
+    #If someone puts a method that doesn't exist, just raise error
+    if method not in ["REGAUSS", "KSB", "LINEAR", "BJ"]:
+        raise ValueError(f"method must be REGAUSS, KSB, LINEAR, or BJ, not '{method}'")
+
+    #Unpacking the dimensions of the image array
+    batch_size, max_n_sources, height, width = images.shape
+
+    # Initialize return values as arrays with size batch_size x max_n_sources with nans
+    # We can't do zeros, that's a real measurement. We will fill it up later
+    g1 = np.full((batch_size, max_n_sources), np.nan)
+    g2 = np.full((batch_size, max_n_sources), np.nan)
+    resolution = np.full((batch_size, max_n_sources), np.nan)
+    sigma = np.full((batch_size, max_n_sources), np.nan)
+
+    # HSM needs an image for the psf for later, but psf is a GalSim, so make it into one.
+    psf_image = psf.drawImage(nx=width, ny=height, scale=pixel_scale)
+
+    # For every blend
+    for ii in range(batch_size):
+        # For every galaxy in blend
+        for jj in range(max_n_sources):
+            # Skip empty slots because no galaxy in blend
+            if np.sum(images[ii, jj]) <= 0:
+                continue
+            
+            # We need an image because again, HSM accepts only images
+            gal_image = galsim.Image(images[ii, jj], scale=pixel_scale)
+            # Get the pixel coordinates of galaxy's center
+            x, y = centroids[ii, jj]
+            # Get the galaxy's shape and correct for PSF blur using aforementioned method 
+            result = galsim.hsm.EstimateShear(gal_image,psf_image,shear_est=method,strict=False,
+                guess_centroid=galsim.PositionD(x, y))
+
+            # If the error message is empty, measurement succeeded. If not, then skip the galaxy
+            if result.error_message != "":
+                continue
+
+            # Different methods measure different things.
+            # KSB measures shear g. REGAUSS, LINEAR, and BJ measure distortion e.
+            # So check which measurements we obtained
+            if result.meas_type == "g":
+                g1[ii, jj] = result.corrected_g1
+                g2[ii, jj] = result.corrected_g2
+            else:
+                e1 = result.corrected_e1
+                e2 = result.corrected_e2
+                # abs(e) has to be less than 1, otherwise the measurement is nonsense so skip it if its true
+                if e1**2 + e2**2 >= 1:
+                    continue
+                # Convert distortion e to shear g
+                shear = galsim.Shear(e1=e1, e2=e2)
+                g1[ii, jj] = shear.g1
+                g2[ii, jj] = shear.g2
+            # Galaxy's resolution. So 0 = low res.
+            # Maybe I can forget about some galaxies based on resolution?
+            resolution[ii, jj] = result.resolution_factor
+            # Galaxy's size in pixels
+            sigma[ii, jj] = result.moments_sigma
+
+    return {"g1": g1, "g2": g2, "resolution": resolution, "sigma": sigma}
 
 
 def get_blendedness(iso_image: np.ndarray) -> np.ndarray:
