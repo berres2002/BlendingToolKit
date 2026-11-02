@@ -1,10 +1,11 @@
 """Module for measuring galaxy properties from images."""
 
-from typing import Dict, Tuple
+from typing import Dict, List, Optional, Tuple
 
 import galsim
 import numpy as np
 import sep
+from astropy.table import Table
 from galsim import GSObject
 
 
@@ -171,6 +172,147 @@ method: str = "REGAUSS",) -> Dict[str, np.ndarray]:
 
     return {"g1": g1, "g2": g2, "resolution": resolution, "sigma": sigma}
 
+def get_multiband_hsm_shapes(
+    images: np.ndarray,
+    centroids: Optional[np.ndarray],
+    psfs: Optional[list],
+    pixel_scale: float,
+    method: str = "REGAUSS",
+) -> Dict[str, np.ndarray]:
+    """Measure galaxy shapes in every band with GalSim's HSM code, using the PSF of each band.
+
+    Observed shapes come from galsim.hsm.FindAdaptiveMom and don't need a PSF. PSF-corrected
+    shapes come from galsim.hsm.EstimateShear and need the PSF of each band. If a galaxy slot is
+    empty or a measurement fails, that value stays np.nan.
+
+    For one galaxy, g1 and g2 are its ellipticity (how stretched it is and in which direction),
+    written as a reduced shear. They are not the lensing shear: that only shows up when you
+    average g1, g2 over many galaxies.
+
+    The images can be anything with the right shape: isolated galaxies, deblended galaxies from
+    any deblender, or the blend copied into every slot.
+
+    Args:
+        images: Galaxy images, shape (batch_size, max_n_sources, n_bands, h, w).
+        centroids: Galaxy centers (x, y), shape (batch_size, max_n_sources, 2), GalSim convention
+            (center of the lower-left pixel is (1, 1)). If None, HSM starts at the image center.
+        psfs: List of GalSim PSF objects, one per band (like blend_batch.psf). If None, only the
+            observed shapes are measured.
+        pixel_scale: Pixel scale of the images in arcsec/pixel.
+        method: HSM method to use: "REGAUSS", "KSB", "LINEAR", or "BJ".
+
+    Returns:
+        Dictionary where each value has shape (batch_size, max_n_sources, n_bands).
+            g1_obs, g2_obs: observed ellipticity (PSF not removed, so rounder than the galaxy).
+            sigma_obs: observed size in arcsec (PSF not removed).
+            x_centroid, y_centroid: measured center of the galaxy in pixels (GalSim convention).
+            Ixx, Iyy, Ixy: observed second moments in pixels^2 (PSF not removed).
+            a, b: observed semi-major and semi-minor axes in pixels, from Ixx, Iyy, Ixy.
+            g1, g2: PSF-corrected ellipticity.
+            q: PSF-corrected axis ratio b/a.
+            beta: PSF-corrected position angle in degrees.
+            resolution: resolution factor R2 (0 = like the PSF, 1 = much bigger than the PSF).
+            sigma_psf: size of the PSF in arcsec.
+    """
+    # If someone puts a method that doesn't exist, just raise error
+    if method not in ["REGAUSS", "KSB", "LINEAR", "BJ"]:
+        raise ValueError(f"method must be REGAUSS, KSB, LINEAR, or BJ, not '{method}'")
+
+    # Unpacking the dimensions of the image array
+    batch_size, max_n_sources, n_bands, height, width = images.shape
+
+    # Start everything as nan since zero is a real measurement, we fill it up later
+    keys = ["g1_obs", "g2_obs", "sigma_obs", "x_centroid", "y_centroid", "Ixx", "Iyy", "Ixy",
+            "a", "b", "g1", "g2", "q", "beta", "resolution", "sigma_psf"]
+    results = {}
+    for key in keys:
+        results[key] = np.full((batch_size, max_n_sources, n_bands), np.nan)
+
+    # For every band
+    for band in range(n_bands):
+        # HSM needs an image of the PSF, so draw this band's PSF once
+        psf_image = None
+        if psfs is not None:
+            psf_image = psfs[band].drawImage(nx=width, ny=height, scale=pixel_scale)
+
+        # For every blend
+        for ii in range(batch_size):
+            # For every galaxy in blend
+            for jj in range(max_n_sources):
+                # Skip empty slots because no galaxy there
+                if np.sum(images[ii, jj, band]) <= 0:
+                    continue
+
+                # HSM only accepts GalSim images
+                gal_image = galsim.Image(images[ii, jj, band], scale=pixel_scale)
+
+                # First guess for the galaxy's center
+                guess = None
+                if centroids is not None and not np.any(np.isnan(centroids[ii, jj])):
+                    guess = galsim.PositionD(centroids[ii, jj, 0], centroids[ii, jj, 1])
+
+                # Observed shape with no PSF needed
+                moments = galsim.hsm.FindAdaptiveMom(gal_image, guess_centroid=guess, strict=False)
+                if moments.error_message != "":
+                    continue
+                sigma = moments.moments_sigma
+                e1 = moments.observed_shape.e1
+                e2 = moments.observed_shape.e2
+                # T = Ixx + Iyy
+                absesq = e1**2 + e2**2
+                T = 2 * sigma**2 / (1 - absesq)**0.5
+
+                Ixx = 0.5 * T*(1+e1)
+                Iyy = 0.5 * T*(1-e1)
+                Ixy = 0.5 * T*e2
+                
+                results["Ixx"][ii, jj, band] = Ixx
+                results["Iyy"][ii, jj, band] = Iyy
+                results["Ixy"][ii, jj, band] = Ixy
+
+                # Equations for a and b given Ixx, Ixy, and Iyy
+                results["a"][ii, jj, band] = ((Ixx + Iyy) / 2 + ((Ixx - Iyy) ** 2 / 4 + Ixy**2) ** 0.5) ** 0.5
+                results["b"][ii, jj, band] = ((Ixx + Iyy) / 2 - ((Ixx - Iyy) ** 2 / 4 + Ixy**2) ** 0.5) ** 0.5
+                results["g1_obs"][ii, jj, band] = moments.observed_shape.g1
+                results["g2_obs"][ii, jj, band] = moments.observed_shape.g2
+                results["sigma_obs"][ii, jj, band] = moments.moments_sigma * pixel_scale
+                # Where HSM found the center of the light, in pixels (GalSim convention)
+                results["x_centroid"][ii, jj, band] = moments.moments_centroid.x
+                results["y_centroid"][ii, jj, band] = moments.moments_centroid.y
+
+                # Without a PSF we can't correct the shape, so stop here
+                if psf_image is None:
+                    continue
+
+                # PSF-corrected shape
+                result = galsim.hsm.EstimateShear(
+                    gal_image, psf_image, shear_est=method, strict=False, guess_centroid=guess
+                )
+                if result.error_message != "":
+                    continue
+
+                # KSB measures shear g. REGAUSS, LINEAR, and BJ measure distortion e.
+                if result.meas_type == "g":
+                    comp1, comp2 = result.corrected_g1, result.corrected_g2
+                else:
+                    comp1, comp2 = result.corrected_e1, result.corrected_e2
+
+                # e or g has to be less than 1, otherwise the measurement doesn't make sense
+                if comp1**2 + comp2**2 >= 1:
+                    continue
+
+                if result.meas_type == "g":
+                    shear = galsim.Shear(g1=comp1, g2=comp2)
+                else:
+                    shear = galsim.Shear(e1=comp1, e2=comp2)
+
+                results["g1"][ii, jj, band] = shear.g1
+                results["g2"][ii, jj, band] = shear.g2
+                results["q"][ii, jj, band] = shear.q
+                results["beta"][ii, jj, band] = shear.beta.deg
+                results["resolution"][ii, jj, band] = result.resolution_factor
+                results["sigma_psf"][ii, jj, band] = result.psf_sigma * pixel_scale
+    return results
 
 def get_blendedness(iso_image: np.ndarray) -> np.ndarray:
     """Calculate blendedness given isolated images of each galaxy in a blend.
